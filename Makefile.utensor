@@ -1,0 +1,54 @@
+NAME = edge-impulse-standalone
+
+CC = clang
+CXX = clang++
+CFLAGS ?= -Wall
+
+MACROS += -DEIDSP_SIGNAL_C_FN_POINTER=1
+CXXFLAGS += -std=c++11
+CXXFLAGS += -I.
+CXXFLAGS += -Isource
+CXXFLAGS += -Iedge-impulse-sdk/
+CXXFLAGS += -Iedge-impulse-sdk/utensor
+CXXFLAGS += -Iedge-impulse-sdk/utensor/src
+CXXFLAGS += -Iedge-impulse-sdk/utensor/src/uTensor
+CXXFLAGS += -Iedge-impulse-sdk/utensor/src/uTensor/core
+CXXFLAGS += -Iedge-impulse-sdk/utensor/src/uTensor/loaders
+CXXFLAGS += -Iedge-impulse-sdk/utensor/src/uTensor/ops
+CXXFLAGS += -Iedge-impulse-sdk/utensor/src/uTensor/util
+CXXFLAGS += -Imodel-parameters
+CXXFLAGS += -Iutensor-model
+CXXFLAGS += -Iedge-impulse-sdk/anomaly
+CXXFLAGS += -Iedge-impulse-sdk/classifier
+CXXFLAGS += -Iedge-impulse-sdk/dsp
+CXXFLAGS += -Iedge-impulse-sdk/dsp/kissfft
+CXXFLAGS += -Iedge-impulse-sdk/porting
+CXXFLAGS += -lc++
+CXXFLAGS += -lm
+
+CFLAGS += -I.
+CFLAGS += -Isource
+CFLAGS += -Iedge-impulse-sdk/
+CFLAGS += -Imodel-parameters
+CFLAGS += -Iutensor-model
+CFLAGS += -Iedge-impulse-sdk/anomaly
+CFLAGS += -Iedge-impulse-sdk/classifier
+CFLAGS += -Iedge-impulse-sdk/dsp
+CFLAGS += -Iedge-impulse-sdk/dsp/kissfft
+CFLAGS += -Iedge-impulse-sdk/porting
+CFLAGS += -lc++
+CFLAGS += -lm
+
+all: build
+
+.PHONY: build clean
+
+build/libedgeimpulse.so:
+	mkdir -p build
+	$(CXX) $(MACROS) $(CXXFLAGS) $(LFLAGS) -shared edge-impulse-sdk/dsp/kissfft/*.cpp edge-impulse-sdk/dsp/dct/*.cpp  ./edge-impulse-sdk/dsp/memory.cpp edge-impulse-sdk/porting/posix/*.c* utensor-model/*.cpp edge-impulse-sdk/classifier/*.cpp -o build/libedgeimpulse.so -Ledge-impulse-sdk/utensor -lutensor
+
+build: build/libedgeimpulse.so
+	$(CC) $(MACROS) $(CFLAGS) $(LFLAGS) source/*.c build/libedgeimpulse.so -o build/$(NAME)
+
+clean:
+	rm -rf build/
