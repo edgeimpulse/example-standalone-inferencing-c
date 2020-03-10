@@ -14,7 +14,6 @@ int get_feature_data(size_t offset, size_t length, float *out_ptr) {
 }
 
 EI_IMPULSE_ERROR run_classifier(signal_t *, ei_impulse_result_t *, bool);
-int signal_from_buffer(float *data, size_t data_size, signal_t *signal);
 
 int main(int argc, char **argv) {
     if (argc != 2) {
