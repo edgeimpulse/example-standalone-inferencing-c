@@ -18,6 +18,7 @@ CXXFLAGS += -Iedge-impulse-sdk/third_party/flatbuffers/include/flatbuffers
 CXXFLAGS += -Iedge-impulse-sdk/third_party/gemmlowp/
 CXXFLAGS += -Iedge-impulse-sdk/third_party/gemmlowp/fixedpoint
 CXXFLAGS += -Iedge-impulse-sdk/third_party/gemmlowp/internal
+CXXFLAGS += -Iedge-impulse-sdk/third_party/ruy
 CXXFLAGS += -Imodel-parameters
 CXXFLAGS += -Itflite-model
 CXXFLAGS += -Iedge-impulse-sdk/anomaly
