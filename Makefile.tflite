@@ -29,6 +29,7 @@ CXXFLAGS += -Iedge-impulse-sdk/dsp/kissfft
 CXXFLAGS += -Iedge-impulse-sdk/porting
 CXXFLAGS += -lstdc++
 CXXFLAGS += -lm
+CXXFLAGS += -fPIC
 
 CFLAGS += -I.
 CFLAGS += -Isource
@@ -41,6 +42,7 @@ CFLAGS += -Iedge-impulse-sdk/dsp
 CFLAGS += -Iedge-impulse-sdk/dsp/kissfft
 CFLAGS += -Iedge-impulse-sdk/porting
 CFLAGS += -lm
+CFLAGS += -fPIC
 
 all: build
 
