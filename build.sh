@@ -8,29 +8,12 @@ rm -f $SCRIPTPATH/out/*
 
 rm -rf $SCRIPTPATH/build
 
-rm -f $SCRIPTPATH/edge-impulse-sdk/utensor/CMakeCache.txt
-
-if [ -d $SCRIPTPATH/utensor-model/ ]; then
-    echo "Building uTensor library"
-
-    # build uTensor library file
-    cd $SCRIPTPATH/edge-impulse-sdk/utensor
-    cmake .
-    make
-
-    echo "Building uTensor library OK"
-fi
-
 echo "Building standalone classifier"
 
 cd $SCRIPTPATH
 
 # build the Edge Impulse classifier
-if [ -d $SCRIPTPATH/utensor-model/ ]; then
-    make -f Makefile.utensor
-else
-    make -f Makefile.tflite
-fi
+make -f Makefile.tflite
 
 echo "Building standalone classifier OK"
 
