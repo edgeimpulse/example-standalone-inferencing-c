@@ -66,8 +66,7 @@ static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
 
 snd_pcm_t *capture_handle;
 
-void *
-initAlsa()
+void *initAlsa()
 {
     int channels = 1;
     char *card = "hw:1";
@@ -229,6 +228,8 @@ int main()
             print_results = 0;
         }
     }
+
+    microphone_inference_end();
 }
 
 /**
@@ -327,18 +328,12 @@ bool microphone_inference_start()
 }
 
 void int16_to_float(short int *input, float *output, size_t length)
-        {
-// #if EIDSP_USE_CMSIS_DSP
-//             arm_q15_to_float(input, output, length);
-// #else
-            for (size_t ix = 0; ix < length; ix++)
-            {
-                output[ix] = (float)(input[ix]) / 32768;
-            }
-// #endif
-//             return EIDSP_OK;
-//         }
-        }
+{
+    for (size_t ix = 0; ix < length; ix++)
+    {
+        output[ix] = (float)(input[ix]) / 32768;
+    }
+}
 
 /**
  * Get raw audio signal data
@@ -353,9 +348,11 @@ int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_pt
 /**
  * @brief      Stop PDM and release buffers
  */
-void microphone_inference_end(void)
+void microphone_inference_end()
 {
     // PDM.end();
+    snd_pcm_drop(capture_handle);
+    snd_pcm_close(capture_handle);
     free(inference.buffers[0]);
     free(inference.buffers[1]);
     free(sampleBuffer);
