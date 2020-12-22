@@ -33,6 +33,7 @@
 int microphone_audio_signal_get_data(size_t, size_t, float *);
 void run_classifier_init();
 bool microphone_inference_start();
+void microphone_inference_end();
 void readData();
 int run_classifier_continuous(signal_t*, ei_impulse_result_t* , bool);
 void int16_to_float(short int*, float *, size_t );
