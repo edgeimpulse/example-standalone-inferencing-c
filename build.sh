@@ -6,7 +6,7 @@ rm -f $SCRIPTPATH/*.gcno
 mkdir -p $SCRIPTPATH/out
 rm -f $SCRIPTPATH/out/*
 
-rm -rf $SCRIPTPATH/build
+#rm -rf $SCRIPTPATH/build
 
 rm -f $SCRIPTPATH/edge-impulse-sdk/utensor/CMakeCache.txt
 

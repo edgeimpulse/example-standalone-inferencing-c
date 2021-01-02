@@ -27,7 +27,6 @@
 #include "ei_classifier_porting.h"
 #include "ei_classifier_types.h"
 
-
 #include <alsa/asoundlib.h>
 
 int microphone_audio_signal_get_data(size_t, size_t, float *);
@@ -35,9 +34,8 @@ void run_classifier_init();
 bool microphone_inference_start();
 void microphone_inference_end();
 void readData();
-int run_classifier_continuous(signal_t*, ei_impulse_result_t* , bool);
-void int16_to_float(short int*, float *, size_t );
-
+int run_classifier_continuous(signal_t *, ei_impulse_result_t *, bool);
+void le16_to_float(short int *, float *, size_t);
 
 // If your target is limited in memory remove this macro to save 10K RAM
 #define EIDSP_QUANTIZE_FILTERBANK 0
@@ -47,32 +45,23 @@ void int16_to_float(short int*, float *, size_t );
  * with slices per model window set to 4. Results in a slice size of 250 ms.
  * For more info: https://docs.edgeimpulse.com/docs/continuous-audio-sampling
  */
-#define EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW 3
+#define EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW 4
 
-/** Audio buffers, pointers and selectors */
-typedef struct
-{
-    signed short *buffers[2];
-    unsigned char buf_select;
-    unsigned char buf_ready;
-    unsigned int buf_count;
-    unsigned int n_samples;
-} inference_t;
-
-static inference_t inference;
-static bool record_ready = false;
 static signed short *sampleBuffer;
-static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
-static int print_results = -(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
+signed short n_samples = EI_CLASSIFIER_SLICE_SIZE * sizeof(signed short); // The data returned from ALSA uses 2 bytes to define a sample
+static bool debug_nn = false;                                             // Set this to true to see e.g. features generated from the raw signal
 
 snd_pcm_t *capture_handle;
+int channels = 1;
+unsigned int rate = EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE;
+snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
 
-void *initAlsa()
+void *
+initAlsa()
 {
-    int channels = 1;
+
     char *card = "hw:1";
     int err;
-    unsigned int rate = 44100;
 
     snd_pcm_hw_params_t *hw_params;
 
@@ -113,7 +102,7 @@ void *initAlsa()
 
     fprintf(stdout, "hw_params access setted\n");
 
-    if ((err = snd_pcm_hw_params_set_format(capture_handle, hw_params, SND_PCM_FORMAT_S16_LE)) < 0)
+    if ((err = snd_pcm_hw_params_set_format(capture_handle, hw_params, format)) < 0)
     {
         fprintf(stderr, "cannot set sample format (%s)\n",
                 snd_strerror(err));
@@ -166,11 +155,9 @@ void *initAlsa()
     return capture_handle;
 }
 
-/**
- * @brief      Arduino setup function
- */
 void setup()
 {
+    sampleBuffer = (signed short *)malloc((n_samples));
     initAlsa();
     // summary of inferencing settings (from model_metadata.h)
     printf("Inferencing settings:\n");
@@ -180,11 +167,6 @@ void setup()
     printf("\tNo. of classes: %lu\n", (sizeof(ei_classifier_inferencing_categories) / sizeof(ei_classifier_inferencing_categories[0])));
 
     run_classifier_init();
-    if (microphone_inference_start() == false)
-    {
-        printf("ERR: Failed to setup audio sampling\r\n");
-        return;
-    }
 }
 
 /**
@@ -199,163 +181,85 @@ int main()
     signal.get_data = &microphone_audio_signal_get_data;
     ei_impulse_result_t result = {0};
 
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 100; i++)
     {
-        readData();
         EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
-                                
+
         if (r != EI_IMPULSE_OK)
         {
             printf("ERR: Failed to run classifier (%d)\n", r);
             exit(1);
         }
 
-        if (++print_results >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW))
+        // print the predictions
+        printf("Predictions ");
+        printf("(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+               result.timing.dsp, result.timing.classification, result.timing.anomaly);
+        printf(": \n");
+        for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
         {
-            // print the predictions
-            printf("Predictions ");
-            printf("(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-                   result.timing.dsp, result.timing.classification, result.timing.anomaly);
-            printf(": \n");
-            for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
-            {
-                printf("    %s: %.5f\n", result.classification[ix].label,
-                       result.classification[ix].value);
-            }
-#if EI_CLASSIFIER_HAS_ANOMALY == 1
-            printf("    anomaly score: %.3f\n", result.anomaly);
-#endif
-
-            print_results = 0;
+            printf("    %s: %.5f\n", result.classification[ix].label,
+                   result.classification[ix].value);
         }
+
+        int id = 0;
+        if (result.classification[id].value > 0.3)
+        {
+            printf("Match!!!    %s: %.5f\n", result.classification[id].label,
+                   result.classification[id].value);
+        }
+
+#if EI_CLASSIFIER_HAS_ANOMALY == 1
+        printf("    anomaly score: %.3f\n", result.anomaly);
+#endif
     }
 
     microphone_inference_end();
 }
 
-/**
- * @brief      PDM buffer full callback
- *             Get data and call audio thread callback
- */
 void readData()
 {
     int err;
-    int buffer_frames = 128;
+
+    int bitsPerSample = snd_pcm_format_physical_width(format); // for SND_PCM_FORMAT_S16_LE it is 16 bits or 2 bytes
+    int bytesPerSample = bitsPerSample / 8;                    // Convert to Bytes = 2
+    int bytesPerFrame = bytesPerSample * channels;
+    int buffer_frames = n_samples / bytesPerFrame;
 
     if ((err = snd_pcm_readi(capture_handle, sampleBuffer, buffer_frames)) != buffer_frames)
     {
-        fprintf(stderr, "read from audio interface failed (%s)\n",
-                snd_strerror(err));
+        fprintf(stderr, "read from audio interface failed:%s\n", snd_strerror(err));
         exit(1);
     }
-
-    // // read into the sample buffer
-    // int bytesRead = PDM.read((char *)&sampleBuffer[0], bytesAvailable);
-
-    if (record_ready == true)
-    {
-        for (int i = 0; i > 1; i++)
-        {
-            inference.buffers[inference.buf_select][inference.buf_count++] = sampleBuffer[i];
-
-            if (inference.buf_count >= inference.n_samples)
-            {
-                inference.buf_select ^= 1;
-                inference.buf_count = 0;
-                inference.buf_ready = 1;
-            }
-        }
-    }
 }
 
-signed short n_samples = EI_CLASSIFIER_SLICE_SIZE;
-/**
- * @brief      Init inferencing struct and setup/start PDM
- *
- * @param[in]  n_samples  The n samples
- *
- * @return     { description_of_the_return_value }
- */
-bool microphone_inference_start()
+void le16_to_float(short int *input, float *output, size_t length)
 {
-    inference.buffers[0] = (signed short *)malloc(n_samples * sizeof(signed short));
-
-    if (inference.buffers[0] == NULL)
+    int ii = 0;
+    // 2 bytes per sample are used for the input so need to loop in pairs.
+    for (size_t ix = 0; ix < length * 2; ix += 2)
     {
-        return false;
-    }
+        int16_t i = (uint16_t)input[ix] | ((uint16_t)input[ix + 1] << 8);
 
-    inference.buffers[1] = (signed short *)malloc(n_samples * sizeof(signed short));
-
-    if (inference.buffers[0] == NULL)
-    {
-        free(inference.buffers[0]);
-        return false;
-    }
-
-    sampleBuffer = (signed short *)malloc((n_samples >> 1) * sizeof(signed short));
-
-    if (sampleBuffer == NULL)
-    {
-        free(inference.buffers[0]);
-        free(inference.buffers[1]);
-        return false;
-    }
-
-    inference.buf_select = 0;
-    inference.buf_count = 0;
-    inference.n_samples = n_samples;
-    inference.buf_ready = 0;
-
-    // configure the data receive callback
-    // PDM.onReceive(&readData);
-
-    // // optionally set the gain, defaults to 20
-    // PDM.setGain(80);
-
-    // PDM.setBufferSize((n_samples >> 1) * sizeof(int16_t));
-
-    // // initialize PDM with:
-    // // - one channel (mono mode)
-    // // - a 16 kHz sample rate
-    // if (!PDM.begin(1, EI_CLASSIFIER_FREQUENCY))
-    // {
-    //     printf("Failed to start PDM!");
-    // }
-
-    record_ready = true;
-
-    return true;
-}
-
-void int16_to_float(short int *input, float *output, size_t length)
-{
-    for (size_t ix = 0; ix < length; ix++)
-    {
-        output[ix] = (float)(input[ix]) / 32768;
+        float f = (float)(i) / 32768;
+        output[ii] = f;
+        ii++;
     }
 }
 
-/**
- * Get raw audio signal data
- */
 int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
 {
-    int16_to_float(&inference.buffers[inference.buf_select ^ 1][offset], out_ptr, length);
+    readData();
+    // printf("offset %d \n", offset);
+    le16_to_float(&sampleBuffer[offset], out_ptr, length);
 
     return 0;
 }
 
-/**
- * @brief      Stop PDM and release buffers
- */
 void microphone_inference_end()
 {
-    // PDM.end();
     snd_pcm_drop(capture_handle);
     snd_pcm_close(capture_handle);
-    free(inference.buffers[0]);
-    free(inference.buffers[1]);
     free(sampleBuffer);
 }
 
