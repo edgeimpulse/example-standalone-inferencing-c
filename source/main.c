@@ -53,7 +53,7 @@ static bool debug_nn = false;                                             // Set
 
 snd_pcm_t *capture_handle;
 int channels = 1;
-unsigned int rate = EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE;
+unsigned int rate = EI_CLASSIFIER_FREQUENCY;
 snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
 
 void *
@@ -111,15 +111,14 @@ initAlsa()
 
     fprintf(stdout, "hw_params format setted\n");
 
-    if ((err = snd_pcm_hw_params_set_rate_near(capture_handle, hw_params, &rate, 0)) < 0)
+    if ((err = snd_pcm_hw_params_set_rate(capture_handle, hw_params, rate, 0)) < 0)
     {
         fprintf(stderr, "cannot set sample rate (%s)\n",
                 snd_strerror(err));
         exit(1);
     }
 
-    fprintf(stdout, "hw_params rate setted\n");
-    printf("channels - %d \n", channels);
+    fprintf(stdout, "hw_params rate setted: %d\n", rate);
 
     if ((err = snd_pcm_hw_params_set_channels(capture_handle, hw_params, channels)) < 0)
     {
@@ -128,7 +127,7 @@ initAlsa()
         exit(1);
     }
 
-    fprintf(stdout, "hw_params channels setted\n");
+    fprintf(stdout, "hw_params channels setted:%d\n", channels);
 
     if ((err = snd_pcm_hw_params(capture_handle, hw_params)) < 0)
     {
@@ -181,8 +180,9 @@ int main()
     signal.get_data = &microphone_audio_signal_get_data;
     ei_impulse_result_t result = {0};
 
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 1000; i++)
     {
+        readData();
         EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
 
         if (r != EI_IMPULSE_OK)
@@ -192,22 +192,19 @@ int main()
         }
 
         // print the predictions
-        printf("Predictions ");
-        printf("(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
-               result.timing.dsp, result.timing.classification, result.timing.anomaly);
-        printf(": \n");
-        for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
-        {
-            printf("    %s: %.5f\n", result.classification[ix].label,
-                   result.classification[ix].value);
-        }
+        // printf("Predictions ");
+        // printf("(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
+        //        result.timing.dsp, result.timing.classification, result.timing.anomaly);
+        // printf(": \n");
+        // for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+        // {
+        //     printf("    %s: %.5f\n", result.classification[ix].label,
+        //            result.classification[ix].value);
+        // }
 
         int id = 0;
-        if (result.classification[id].value > 0.3)
-        {
-            printf("Match!!!    %s: %.5f\n", result.classification[id].label,
-                   result.classification[id].value);
-        }
+        printf("            %s: %.5f\n", result.classification[id].label,
+               result.classification[id].value);
 
 #if EI_CLASSIFIER_HAS_ANOMALY == 1
         printf("    anomaly score: %.3f\n", result.anomaly);
@@ -249,7 +246,6 @@ void le16_to_float(short int *input, float *output, size_t length)
 
 int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
 {
-    readData();
     // printf("offset %d \n", offset);
     le16_to_float(&sampleBuffer[offset], out_ptr, length);
 
