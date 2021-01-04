@@ -100,7 +100,7 @@ initAlsa()
         exit(1);
     }
 
-    fprintf(stdout, "hw_params access setted\n");
+    fprintf(stdout, "hw_params access set\n");
 
     if ((err = snd_pcm_hw_params_set_format(capture_handle, hw_params, format)) < 0)
     {
@@ -109,7 +109,7 @@ initAlsa()
         exit(1);
     }
 
-    fprintf(stdout, "hw_params format setted\n");
+    fprintf(stdout, "hw_params format set\n");
 
     if ((err = snd_pcm_hw_params_set_rate(capture_handle, hw_params, rate, 0)) < 0)
     {
@@ -117,13 +117,14 @@ initAlsa()
                 snd_strerror(err));
         exit(1);
     }
-    else {
+    else
+    {
         unsigned int read_rate;
         int read_dir;
 
         snd_pcm_hw_params_get_rate(hw_params, &read_rate, &read_dir);
 
-        fprintf(stdout, "hw_params rate setted: %d\n", read_rate);
+        fprintf(stdout, "hw_params rate set: %d\n", read_rate);
     }
 
     if ((err = snd_pcm_hw_params_set_channels(capture_handle, hw_params, channels)) < 0)
@@ -133,7 +134,7 @@ initAlsa()
         exit(1);
     }
 
-    fprintf(stdout, "hw_params channels setted:%d\n", channels);
+    fprintf(stdout, "hw_params channels set:%d\n", channels);
 
     if ((err = snd_pcm_hw_params(capture_handle, hw_params)) < 0)
     {
@@ -142,7 +143,7 @@ initAlsa()
         exit(1);
     }
 
-    fprintf(stdout, "hw_params setted\n");
+    fprintf(stdout, "hw_params set\n");
 
     snd_pcm_hw_params_free(hw_params);
 
