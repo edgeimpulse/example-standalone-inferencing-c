@@ -117,8 +117,14 @@ initAlsa()
                 snd_strerror(err));
         exit(1);
     }
+    else {
+        unsigned int read_rate;
+        int read_dir;
 
-    fprintf(stdout, "hw_params rate setted: %d\n", rate);
+        snd_pcm_hw_params_get_rate(hw_params, &read_rate, &read_dir);
+
+        fprintf(stdout, "hw_params rate setted: %d\n", read_rate);
+    }
 
     if ((err = snd_pcm_hw_params_set_channels(capture_handle, hw_params, channels)) < 0)
     {
