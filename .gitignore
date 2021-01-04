@@ -6,3 +6,4 @@ model-parameters/
 edge-impulse-sdk
 deploy.zip
 features.txt
+*.o
