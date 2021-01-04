@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
         char *token = strtok(argv[1], ",");
         while (token != NULL) {
             features[feature_ix++] = strtof(token, NULL);
-            token = strtok(NULL, " ");
+            token = strtok(NULL, ",");
         }
     }
 
