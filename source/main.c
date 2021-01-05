@@ -35,7 +35,7 @@ bool microphone_inference_start();
 void microphone_inference_end();
 void readData();
 int run_classifier_continuous(signal_t *, ei_impulse_result_t *, bool);
-void le16_to_float(short int *, float *, size_t);
+void le16_to_float(char *, float *, size_t);
 
 // If your target is limited in memory remove this macro to save 10K RAM
 #define EIDSP_QUANTIZE_FILTERBANK 0
@@ -47,9 +47,10 @@ void le16_to_float(short int *, float *, size_t);
  */
 #define EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW 4
 
-static signed short *sampleBuffer;
-signed short n_samples = EI_CLASSIFIER_SLICE_SIZE * sizeof(signed short); // The data returned from ALSA uses 2 bytes to define a sample
-static bool debug_nn = false;                                             // Set this to true to see e.g. features generated from the raw signal
+signed short n_samples = EI_CLASSIFIER_SLICE_SIZE; // The data returned from ALSA uses 2 bytes to define a sample
+static bool debug_nn = false;                      // Set this to true to see e.g. features generated from the raw signal
+
+char sampleBuffer[EI_CLASSIFIER_SLICE_SIZE * sizeof(short signed int)];
 
 snd_pcm_t *capture_handle;
 int channels = 1;
@@ -163,7 +164,7 @@ initAlsa()
 
 void setup()
 {
-    sampleBuffer = (signed short *)malloc((n_samples));
+    // sampleBuffer = (signed short *)malloc(n_samples);
     initAlsa();
     // summary of inferencing settings (from model_metadata.h)
     printf("Inferencing settings:\n");
@@ -198,7 +199,6 @@ int main()
             exit(1);
         }
 
-        // print the predictions
         // printf("Predictions ");
         // printf("(DSP: %d ms., Classification: %d ms., Anomaly: %d ms.)",
         //        result.timing.dsp, result.timing.classification, result.timing.anomaly);
@@ -228,33 +228,37 @@ void readData()
     int bitsPerSample = snd_pcm_format_physical_width(format); // for SND_PCM_FORMAT_S16_LE it is 16 bits or 2 bytes
     int bytesPerSample = bitsPerSample / 8;                    // Convert to Bytes = 2
     int bytesPerFrame = bytesPerSample * channels;
-    int buffer_frames = n_samples / bytesPerFrame;
+    int buffer_frames = sizeof(sampleBuffer) / bytesPerFrame;
 
-    if ((err = snd_pcm_readi(capture_handle, sampleBuffer, buffer_frames)) != buffer_frames)
+    if ((err = snd_pcm_readi(capture_handle, &sampleBuffer, buffer_frames)) != buffer_frames)
     {
         fprintf(stderr, "read from audio interface failed:%s\n", snd_strerror(err));
         exit(1);
     }
+
+    // for (int i = 0; i < sizeof(sampleBuffer); i++)
+    // {
+    //     printf("%02hhX; ", sampleBuffer[i]);
+    // }
+    // printf("\n");
 }
 
-void le16_to_float(short int *input, float *output, size_t length)
+void le16_to_float(char *input, float *output, size_t length)
 {
     int ii = 0;
     // 2 bytes per sample are used for the input so need to loop in pairs.
     for (size_t ix = 0; ix < length * 2; ix += 2)
     {
-        int16_t i = (uint16_t)input[ix] | ((uint16_t)input[ix + 1] << 8);
-
-        float f = (float)(i) / 32768;
-        output[ii] = f;
+        int x = (int)((short *)(&input[ix]))[0];
+        // printf("%d \n", x);
+        output[ii] = (float)(x) / 32768;
         ii++;
     }
 }
 
 int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
 {
-    // printf("offset %d \n", offset);
-    le16_to_float(&sampleBuffer[offset], out_ptr, length);
+    le16_to_float(&sampleBuffer[offset * 2], out_ptr, length);
 
     return 0;
 }
@@ -263,7 +267,6 @@ void microphone_inference_end()
 {
     snd_pcm_drop(capture_handle);
     snd_pcm_close(capture_handle);
-    free(sampleBuffer);
 }
 
 #if !defined(EI_CLASSIFIER_SENSOR) || EI_CLASSIFIER_SENSOR != EI_CLASSIFIER_SENSOR_MICROPHONE
