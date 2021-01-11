@@ -56,12 +56,12 @@ snd_pcm_t *capture_handle;
 int channels = 1;
 unsigned int rate = EI_CLASSIFIER_FREQUENCY;
 snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
+char *card = "hw:1";
 
 void *
 initAlsa()
 {
 
-    char *card = "hw:1";
     int err;
 
     snd_pcm_hw_params_t *hw_params;
@@ -176,11 +176,21 @@ void setup()
     run_classifier_init();
 }
 
+FILE *fptr;
+
 /**
  * @brief      main function. Runs the inferencing loop.
  */
 int main()
 {
+
+    fptr = fopen("sample.txt", "w");
+    if (fptr == NULL)
+    {
+        printf("Error!");
+        exit(1);
+    }
+
     setup();
 
     signal_t signal;
@@ -188,7 +198,7 @@ int main()
     signal.get_data = &microphone_audio_signal_get_data;
     ei_impulse_result_t result = {0};
 
-    for (int i = 0; i < 1000; i++)
+    for (int i = 0; i < 50; i++)
     {
         readData();
         EI_IMPULSE_ERROR r = run_classifier_continuous(&signal, &result, debug_nn);
@@ -210,13 +220,18 @@ int main()
         // }
 
         int id = 0;
-        printf("            %s: %.5f\n", result.classification[id].label,
-               result.classification[id].value);
+        if (result.classification[id].value > 0.40)
+        {
+            printf("            %s: %.5f\n", result.classification[id].label,
+                   result.classification[id].value);
+        }
 
 #if EI_CLASSIFIER_HAS_ANOMALY == 1
         printf("    anomaly score: %.3f\n", result.anomaly);
 #endif
     }
+
+    fclose(fptr);
 
     microphone_inference_end();
 }
@@ -236,11 +251,20 @@ void readData()
         exit(1);
     }
 
-    // for (int i = 0; i < sizeof(sampleBuffer); i++)
-    // {
-    //     printf("%02hhX; ", sampleBuffer[i]);
-    // }
-    // printf("\n");
+    for (size_t ix = 0; ix < sizeof(sampleBuffer); ix += 2)
+    {
+        int x = (int)((short *)(&sampleBuffer[ix]))[0];
+        // fprintf(fptr, "%d,", x);
+        fprintf(fptr, "%2f,", (float)(x) / 32768);
+    }
+}
+
+int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
+{
+    // offset * 2 because each sample is constructed from  2 bytes hence the array is 2 times the samples count.
+    le16_to_float(&sampleBuffer[offset * 2], out_ptr, length);
+
+    return 0;
 }
 
 void le16_to_float(char *input, float *output, size_t length)
@@ -250,17 +274,12 @@ void le16_to_float(char *input, float *output, size_t length)
     for (size_t ix = 0; ix < length * 2; ix += 2)
     {
         int x = (int)((short *)(&input[ix]))[0];
-        // printf("%d \n", x);
         output[ii] = (float)(x) / 32768;
         ii++;
+
+        // fprintf(fptr, "%d,", x);
+        // fprintf(fptr, "%2f,", (float)(x) / 32768);
     }
-}
-
-int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
-{
-    le16_to_float(&sampleBuffer[offset * 2], out_ptr, length);
-
-    return 0;
 }
 
 void microphone_inference_end()
