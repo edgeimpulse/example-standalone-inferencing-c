@@ -1,5 +1,5 @@
 /* Edge Impulse inferencing library
- * Copyright (c) 2020 EdgeImpulse Inc.
+ * Copyright (c) 2021 EdgeImpulse Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -976,7 +976,10 @@ __attribute__((unused)) EI_IMPULSE_ERROR run_impulse(
 #endif
         bool debug = false) {
 
-    float x[EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE] = { 0 };
+    float *x = (float*)calloc(EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE, sizeof(float));
+    if (!x) {
+        return EI_IMPULSE_OUT_OF_MEMORY;
+    }
 
     uint64_t next_tick = 0;
 
@@ -996,6 +999,7 @@ __attribute__((unused)) EI_IMPULSE_ERROR run_impulse(
 #endif
 
         if (ei_run_impulse_check_canceled() == EI_IMPULSE_CANCELED) {
+            free(x);
             return EI_IMPULSE_CANCELED;
         }
 
@@ -1007,11 +1011,14 @@ __attribute__((unused)) EI_IMPULSE_ERROR run_impulse(
     signal_t signal;
     int err = numpy::signal_from_buffer(x, EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE, &signal);
     if (err != 0) {
+        free(x);
         ei_printf("ERR: signal_from_buffer failed (%d)\n", err);
         return EI_IMPULSE_DSP_ERROR;
     }
 
-    return run_classifier(&signal, result, debug);
+    EI_IMPULSE_ERROR r = run_classifier(&signal, result, debug);
+    free(x);
+    return r;
 }
 
 #if defined(EI_CLASSIFIER_HAS_SAMPLER) && EI_CLASSIFIER_HAS_SAMPLER == 1
