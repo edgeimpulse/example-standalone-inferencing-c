@@ -41,6 +41,9 @@ int run_classifier(signal_t *, ei_impulse_result_t *, bool);
 #define SLICE_LENGTH_VALUES  (EI_CLASSIFIER_RAW_SAMPLE_COUNT / (1000 / SLICE_LENGTH_MS))
 
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
+static bool use_maf = false; // Set this (can be done from command line) to enable the moving average filter
+static int32_t last_noise = 1000; // Last time we heard a noise sample
+static int32_t last_record_now = 1000; // Last time we heard a noise sample
 
 int16_t classifier_buffer[EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t)]; // full classifier buffer
 
@@ -156,7 +159,6 @@ void *initAlsa()
 }
 
 static ei_impulse_maf classifier_maf[EI_CLASSIFIER_LABEL_COUNT] = {{0}};
-static bool use_mfa = false;
 static float run_moving_average_filter(ei_impulse_maf *maf, float classification)
 {
     maf->running_sum -= maf->maf_buffer[maf->buf_idx];
@@ -236,13 +238,44 @@ void *classify_task(void *vargp)
         return NULL;
     }
 
-    if (use_mfa) {
+    // if moving average filter is enabled then smooth out the predictions
+    if (use_maf) {
         for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
             result.classification[ix].value =
                 run_moving_average_filter(&classifier_maf[ix], result.classification[ix].value);
         }
     }
 
+    // detect the highest label
+    const char *conclusion = "Uncertain";
+    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+    {
+        // for noise we'll use 0.8 as threshold
+        if (strcmp(result.classification[ix].label, "Noise") == 0) {
+            if (result.classification[ix].value >= 0.8) {
+                conclusion = result.classification[ix].label;
+            }
+        }
+        // for the rest 0.5, we filter out many false positives already through the MAF
+        else if (result.classification[ix].value >= 0.5)
+        {
+            conclusion = result.classification[ix].label;
+        }
+    }
+
+    // set the last_noise variable (we use this to detect some noise before the keyword)
+    if (strcmp(conclusion, "Noise") == 0) {
+        last_noise = 0;
+    }
+    else {
+        last_noise++;
+    }
+
+    // quick pad workaround for nicely printing
+    char conclusion_buffer[16] = { ' ' };
+    snprintf(conclusion_buffer, 16, "%s               ", conclusion);
+
+    printf("%s[", conclusion_buffer);
     for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
     {
         printf("%s: %.5f", result.classification[ix].label, result.classification[ix].value);
@@ -257,6 +290,18 @@ void *classify_task(void *vargp)
     }
     printf("] %s\n", filename);
 
+    // if we've just heard 'Record now' and the last noise segment was 2..4 frames away, then we can treat this as
+    // a keyword. To make prediction even better you could add a similar gate at the end of the keyword but that
+    // would delay detection.
+    if (strcmp(conclusion, "Record now") == 0 && last_noise >= 2 && last_noise <= 4) {
+        // prevent printing two of these in a row
+        if (last_record_now > 1) {
+            printf("\n\nHeard keyword: \x1B[33mRECORD NOW\033[0m\n\n\n");
+        }
+        last_record_now = -1;
+    }
+
+    last_record_now++;
 
     return NULL;
 }
@@ -325,7 +370,7 @@ int main(int argc, char **argv)
 
     if (argc >= 3 && strcmp(argv[2], "--moving-average-filter") == 0) {
         printf("Enabling moving average filter\n");
-        use_mfa = true;
+        use_maf = true;
     }
 
     initAlsa();
@@ -366,8 +411,11 @@ int main(int argc, char **argv)
 
         // 3. classify on another thread so this one can continue reading
         //    (not sure if this is buffered already by the library? if so, can get rid of this and classify here)
-        pthread_t classify_thread_id;
-        pthread_create(&classify_thread_id, NULL, classify_task, NULL);
+        classify_task(NULL);
+
+        // pthread_t classify_thread_id;
+        // int r = pthread_create(&classify_thread_id, NULL, classify_task, NULL);
+        // printf("pthread_created returned %d\n", r);
     }
 
     microphone_inference_end();
