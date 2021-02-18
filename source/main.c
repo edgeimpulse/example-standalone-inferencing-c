@@ -155,6 +155,28 @@ void *initAlsa()
     return capture_handle;
 }
 
+static ei_impulse_maf classifier_maf[EI_CLASSIFIER_LABEL_COUNT] = {{0}};
+static bool use_mfa = false;
+static float run_moving_average_filter(ei_impulse_maf *maf, float classification)
+{
+    maf->running_sum -= maf->maf_buffer[maf->buf_idx];
+    maf->running_sum += classification;
+    maf->maf_buffer[maf->buf_idx] = classification;
+    if (++maf->buf_idx >= ((1000 / SLICE_LENGTH_MS) >> 1)) {
+        maf->buf_idx = 0;
+    }
+    return maf->running_sum / (float)((1000 / SLICE_LENGTH_MS) >> 1);
+}
+
+// at the beginning:
+static void clear_moving_average_filter(ei_impulse_maf *maf)
+{
+    maf->running_sum = 0;
+    for (int i = 0; i < (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW >> 1); i++) {
+        maf->maf_buffer[i] = 0.f;
+    }
+}
+
 /**
  * Classify the current buffer
  */
@@ -212,6 +234,13 @@ void *classify_task(void *vargp)
     if (r != EI_IMPULSE_OK) {
         printf("ERR: Failed to run classifier (%d)\n", r);
         return NULL;
+    }
+
+    if (use_mfa) {
+        for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+            result.classification[ix].value =
+                run_moving_average_filter(&classifier_maf[ix], result.classification[ix].value);
+        }
     }
 
     for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
@@ -294,9 +323,19 @@ int main(int argc, char **argv)
 
     card = argv[1];
 
+    if (argc >= 3 && strcmp(argv[2], "--moving-average-filter") == 0) {
+        printf("Enabling moving average filter\n");
+        use_mfa = true;
+    }
+
     initAlsa();
 
     signal(SIGINT, microphone_inference_end);
+
+    // clear out the moving average filter
+    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+        clear_moving_average_filter(&classifier_maf[ix]);
+    }
 
     // allocate a buffer for the slice
     int16_t slice_buffer[SLICE_LENGTH_VALUES * sizeof(int16_t)];

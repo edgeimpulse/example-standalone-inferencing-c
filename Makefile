@@ -24,6 +24,8 @@ CFLAGS += -Iedge-impulse-sdk/classifier
 CFLAGS += -Iedge-impulse-sdk/dsp
 CFLAGS += -Iedge-impulse-sdk/dsp/kissfft
 CFLAGS += -Iedge-impulse-sdk/porting
+CFLAGS += -Iedge-impulse-sdk/CMSIS/Core/Include/
+CFLAGS += -Iedge-impulse-sdk/CMSIS/DSP/Include/
 CFLAGS += -Os
 CFLAGS += -DNDEBUG
 CFLAGS += -g
@@ -31,7 +33,7 @@ CFLAGS += -fPIC
 CXXFLAGS += -std=c++11
 LDFLAGS += -lm -lstdc++ -lasound -lpthread
 
-CSOURCES = edge-impulse-sdk/tensorflow/lite/c/common.c
+CSOURCES = edge-impulse-sdk/tensorflow/lite/c/common.c $(wildcard edge-impulse-sdk/CMSIS/DSP/Source/BasicMathFunctions/*.c) $(wildcard edge-impulse-sdk/CMSIS/DSP/Source/FastMathFunctions/*.c) $(wildcard edge-impulse-sdk/CMSIS/DSP/Source/StatisticsFunctions/*.c) $(wildcard edge-impulse-sdk/CMSIS/DSP/Source/TransformFunctions/*fft*.c) $(wildcard edge-impulse-sdk/CMSIS/DSP/Source/CommonTables/*.c) $(wildcard edge-impulse-sdk/CMSIS/DSP/Source/TransformFunctions/*bit*.c)
 CXXSOURCES = $(wildcard tflite-model/*.cpp) $(wildcard edge-impulse-sdk/dsp/kissfft/*.cpp) $(wildcard edge-impulse-sdk/dsp/dct/*.cpp) $(wildcard ./edge-impulse-sdk/dsp/memory.cpp) $(wildcard ./edge-impulse-sdk/classifier/*.cpp) $(wildcard edge-impulse-sdk/porting/posix/*.c*) $(wildcard edge-impulse-sdk/porting/mingw32/*.c*)
 CCSOURCES = $(wildcard edge-impulse-sdk/tensorflow/lite/kernels/*.cc) $(wildcard edge-impulse-sdk/tensorflow/lite/kernels/internal/*.cc) $(wildcard edge-impulse-sdk/tensorflow/lite/micro/kernels/*.cc) $(wildcard edge-impulse-sdk/tensorflow/lite/micro/*.cc) $(wildcard edge-impulse-sdk/tensorflow/lite/micro/memory_planner/*.cc) $(wildcard edge-impulse-sdk/tensorflow/lite/core/api/*.cc)
 APP_CSOURCES = $(wildcard source/*.c)
