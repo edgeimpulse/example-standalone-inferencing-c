@@ -42,8 +42,14 @@ int run_classifier(signal_t *, ei_impulse_result_t *, bool);
 
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
 static bool use_maf = false; // Set this (can be done from command line) to enable the moving average filter
-static int32_t last_noise = 1000; // Last time we heard a noise sample
-static int32_t last_record_now = 1000; // Last time we heard a noise sample
+
+// Variables for keyword detection... We're looking for noise .. record now (2x) .. noise
+#define LAST_FRAMES_COUNT                   12          // Keep a buffer of N conclusions (here 3 seconds (12x250ms)
+#define NOISE_THRESHOLD                     0.8         // Threshold to classify a frame as 'noise'
+#define RECORD_NOW_LOW_THRESHOLD            0.4         // Threshold to classify a frame as 'Record now (low)'
+#define RECORD_NOW_HIGH_THRESHOLD           0.75        // Threshold to classify a frame as 'Record now (high)'
+#define RECORD_NOW_MIN_FRAMES_SUCCESSION    2           // Number of 'record now' frames that should be found in succession
+#define RECORD_NOW_MIN_HIGH_FRAMES          1           // Number of 'record now (high)' frames that should be in there
 
 int16_t classifier_buffer[EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t)]; // full classifier buffer
 
@@ -179,6 +185,46 @@ static void clear_moving_average_filter(ei_impulse_maf *maf)
     }
 }
 
+
+/**
+ * Roll array elements along a given axis.
+ * Elements that roll beyond the last position are re-introduced at the first.
+ * @param input_array
+ * @param input_array_size
+ * @param shift The number of places by which elements are shifted.
+ * @returns 0 if OK
+ */
+static int roll_strings(const char **input_array, size_t input_array_size, int shift) {
+    if (shift < 0) {
+        shift = input_array_size + shift;
+    }
+
+    if (shift == 0) {
+        return 0;
+    }
+
+    // so we need to allocate a buffer of the size of shift...
+    char *shift_matrix = (char*)malloc(shift * sizeof(char*));
+    if (!shift_matrix) {
+        return -1002;
+    }
+
+    // we copy from the end of the buffer into the shift buffer
+    memcpy(shift_matrix, input_array + input_array_size - shift, shift * sizeof(char*));
+
+    // now we do a memmove to shift the array
+    memmove(input_array + shift, input_array, (input_array_size - shift) * sizeof(char*));
+
+    // and copy the shift buffer back to the beginning of the array
+    memcpy(input_array, shift_matrix, shift * sizeof(char*));
+
+    free(shift_matrix);
+
+    return 0;
+}
+
+const char *last_frames[LAST_FRAMES_COUNT] = { 0 };
+
 /**
  * Classify the current buffer
  */
@@ -252,8 +298,17 @@ void *classify_task(void *vargp)
     {
         // for noise we'll use 0.8 as threshold
         if (strcmp(result.classification[ix].label, "Noise") == 0) {
-            if (result.classification[ix].value >= 0.8) {
+            if (result.classification[ix].value >= NOISE_THRESHOLD) {
                 conclusion = result.classification[ix].label;
+            }
+        }
+        // keep two separate classes for record now
+        else if (strcmp(result.classification[ix].label, "Record now") == 0) {
+            if (result.classification[ix].value >= RECORD_NOW_HIGH_THRESHOLD) {
+                conclusion = "Record now (high)";
+            }
+            else if (result.classification[ix].value >= RECORD_NOW_LOW_THRESHOLD) {
+                conclusion = "Record now (low)";
             }
         }
         // for the rest 0.5, we filter out many false positives already through the MAF
@@ -263,17 +318,12 @@ void *classify_task(void *vargp)
         }
     }
 
-    // set the last_noise variable (we use this to detect some noise before the keyword)
-    if (strcmp(conclusion, "Noise") == 0) {
-        last_noise = 0;
-    }
-    else {
-        last_noise++;
-    }
+    roll_strings(last_frames, LAST_FRAMES_COUNT, -1);
+    last_frames[LAST_FRAMES_COUNT - 1] = conclusion;
 
     // quick pad workaround for nicely printing
-    char conclusion_buffer[16] = { ' ' };
-    snprintf(conclusion_buffer, 16, "%s               ", conclusion);
+    char conclusion_buffer[25] = { ' ' };
+    snprintf(conclusion_buffer, 25, "%s                                     ", conclusion);
 
     printf("%s[", conclusion_buffer);
     for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
@@ -290,18 +340,76 @@ void *classify_task(void *vargp)
     }
     printf("] %s\n", filename);
 
-    // if we've just heard 'Record now' and the last noise segment was 2..4 frames away, then we can treat this as
-    // a keyword. To make prediction even better you could add a similar gate at the end of the keyword but that
-    // would delay detection.
-    if (strcmp(conclusion, "Record now") == 0 && last_noise >= 2 && last_noise <= 4) {
-        // prevent printing two of these in a row
-        if (last_record_now > 1) {
-            printf("\n\nHeard keyword: \x1B[33mRECORD NOW\033[0m\n\n\n");
+
+    // last_frames contains the last X conclusions
+    // we're looking for a pattern like this:
+    // noise .. record now .. noise
+    // where there are at least 2 record now frames in succession, of which one should be high
+
+    // uncomment this to see the last_frames buffer
+    printf("[ ");
+    for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++) {
+        printf("%s", last_frames[ix]);
+        if (ix != LAST_FRAMES_COUNT - 1) {
+            printf(", ");
         }
-        last_record_now = -1;
+    }
+    printf(" ]\n");
+    printf("\n");
+
+    for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++) {
+        // not enough frames yet
+        if (last_frames[ix] == NULL) {
+            return NULL;
+        }
     }
 
-    last_record_now++;
+
+    bool begins_with_noise = strcmp(last_frames[0], "Noise") == 0;
+    bool ends_with_noise = strcmp(last_frames[LAST_FRAMES_COUNT - 1], "Noise") == 0;
+    if (!begins_with_noise || !ends_with_noise) {
+        // printf("Frame does not begin / end with noise, discarding...\n");
+        return NULL;
+    }
+    else {
+        // now look at the number of 'Record now' frames in succession
+        uint8_t record_now_count = 0;
+        uint8_t record_now_succession = 0;
+        uint8_t record_now_succession_ix_start = 0;
+        uint8_t record_now_succession_ix_end = 0;
+        for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++) {
+            if (strcmp(last_frames[ix], "Record now (low)") == 0 || strcmp(last_frames[ix], "Record now (high)") == 0) {
+                record_now_count++;
+            }
+            else {
+                if (record_now_count > record_now_succession) {
+                    record_now_succession = record_now_count;
+                    record_now_succession_ix_end = ix - 1;
+                    record_now_succession_ix_start = ix - record_now_count;
+                }
+                record_now_count = 0;
+            }
+        }
+
+        if (record_now_succession < RECORD_NOW_MIN_FRAMES_SUCCESSION) {
+            // printf("Frame does not have %d 'Record now' frames in succession, discarding...\n", RECORD_NOW_MIN_FRAMES_SUCCESSION);
+            return NULL;
+        }
+
+        uint8_t record_now_high_count = 0;
+        for (size_t ix = record_now_succession_ix_start; ix <= record_now_succession_ix_end; ix++) {
+            if (strcmp(last_frames[ix], "Record now (high)") == 0) {
+                record_now_high_count++;
+            }
+        }
+
+        if (record_now_high_count < RECORD_NOW_MIN_HIGH_FRAMES) {
+            // printf("Frame does not have %d 'Record now (high)' frames, discarding...\n", RECORD_NOW_MIN_HIGH_FRAMES);
+            return NULL;
+        }
+
+        printf("\n\nHeard keyword: \x1B[33mRECORD NOW\033[0m\n\n\n");
+    }
 
     return NULL;
 }
