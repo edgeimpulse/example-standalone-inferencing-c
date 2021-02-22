@@ -979,7 +979,7 @@ extern "C" EI_IMPULSE_ERROR run_classifier(
     return run_inference(&features_matrix, result, debug);
 }
 
-#ifdef EI_CLASSIFIER_USE_QUANTIZED_DSP_BLOCK
+#if defined(EI_CLASSIFIER_USE_QUANTIZED_DSP_BLOCK) && EI_CLASSIFIER_USE_QUANTIZED_DSP_BLOCK == 1
 
 extern "C" EI_IMPULSE_ERROR run_classifier_i16(
     signal_i16_t *signal,
@@ -1288,7 +1288,7 @@ __attribute__((unused)) EI_IMPULSE_ERROR run_impulse(
     return r;
 }
 
-#ifdef EI_CLASSIFIER_USE_QUANTIZED_DSP_BLOCK
+#if defined(EI_CLASSIFIER_USE_QUANTIZED_DSP_BLOCK) && EI_CLASSIFIER_USE_QUANTIZED_DSP_BLOCK == 1
 
 __attribute__((unused)) EI_IMPULSE_ERROR run_impulse_i16(
 #if defined(EI_CLASSIFIER_HAS_SAMPLER) && EI_CLASSIFIER_HAS_SAMPLER == 1

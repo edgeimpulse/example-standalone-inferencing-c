@@ -41,7 +41,7 @@
 #define EI_CLASSIFIER_PROJECT_ID                 18076
 #define EI_CLASSIFIER_PROJECT_OWNER              "Arribada"
 #define EI_CLASSIFIER_PROJECT_NAME               "KM New with noise"
-#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     7
+#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     8
 #define EI_CLASSIFIER_NN_INPUT_FRAME_SIZE        1287
 #define EI_CLASSIFIER_RAW_SAMPLE_COUNT           16000
 #define EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME      1
@@ -55,7 +55,7 @@
 #define EI_CLASSIFIER_FREQUENCY                  16000
 #define EI_CLASSIFIER_USE_QUANTIZED_DSP_BLOCK    0
 
-#define EI_CLASSIFIER_TFLITE_ARENA_SIZE          19993
+#define EI_CLASSIFIER_TFLITE_ARENA_SIZE          23219
 #define EI_CLASSIFIER_TFLITE_INPUT_DATATYPE      EI_CLASSIFIER_DATATYPE_FLOAT32
 #define EI_CLASSIFIER_TFLITE_INPUT_QUANTIZED     0
 #define EI_CLASSIFIER_TFLITE_INPUT_SCALE         0
@@ -163,15 +163,15 @@ typedef struct {
     float pre_cof;
 } ei_dsp_config_audio_syntiant_t;
 
-ei_dsp_config_mfcc_t ei_dsp_config_3 = {
+ei_dsp_config_mfcc_t ei_dsp_config_572250 = {
     2,
     1,
     13,
     0.02000f,
     0.01000f,
-    32,
+    40,
     256,
-    101,
+    301,
     300,
     0,
     0.98000f,
