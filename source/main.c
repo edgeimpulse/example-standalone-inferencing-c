@@ -32,7 +32,6 @@
 #include "ei_classifier_porting.h"
 #include "ei_classifier_types.h"
 #include <alsa/asoundlib.h>
-// #include "_cgo_export.h"
 #include "main.h"
 
 int microphone_audio_signal_get_data(size_t, size_t, float *);
@@ -43,7 +42,6 @@ int run_classifier(signal_t *, ei_impulse_result_t *, bool);
 #define SLICE_LENGTH_VALUES (EI_CLASSIFIER_RAW_SAMPLE_COUNT / (1000 / SLICE_LENGTH_MS))
 
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
-static bool use_maf = false;  // Set this (can be done from command line) to enable the moving average filter
 
 // Variables for keyword detection... We're looking for noise .. record now (2x) .. noise
 #define LAST_FRAMES_COUNT 12               // Keep a buffer of N conclusions (here 3 seconds (12x250ms)
@@ -59,17 +57,11 @@ snd_pcm_t *capture_handle;
 int channels = 1;
 unsigned int rate = EI_CLASSIFIER_FREQUENCY;
 snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
-char *card;
 
-// void ACFunction()
-// {
-//     printf("ACFunction()\n");
-//     keyword_detected_callback();
-// }
 /**
  * Initialize the alsa library
  */
-void *initAlsa()
+void *initAlsa(char *card)
 {
     int err;
 
@@ -240,7 +232,7 @@ const char *last_frames[LAST_FRAMES_COUNT] = {0};
 /**
  * Classify the current buffer
  */
-void *classify_task(void *vargp)
+void *classify_task(bool use_maf, callback_fcn callback)
 {
     char filename[128] = {0};
 
@@ -473,6 +465,7 @@ void *classify_task(void *vargp)
             // printf("Frame does not have %d 'Record now (high)' frames, discarding...\n", RECORD_NOW_MIN_HIGH_FRAMES);
             return NULL;
         }
+        callback();
 
         printf("\n\nHeard keyword: \x1B[33mRECORD NOW\033[0m\n\n\n");
     }
@@ -533,6 +526,8 @@ static int int16_to_float(int16_t *input, float *output, size_t length)
     return 0;
 }
 
+void no_callback() {}
+
 /**
  * @brief      main function. Runs the inferencing loop.
  */
@@ -547,7 +542,8 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    card = argv[1];
+    char *card = argv[1];
+    bool use_maf = false;
 
     if (argc >= 3 && strcmp(argv[2], "--moving-average-filter") == 0)
     {
@@ -555,7 +551,15 @@ int main(int argc, char **argv)
         use_maf = true;
     }
 
-    initAlsa();
+    callback_fcn callback = &no_callback;
+
+    run(argv[1], use_maf, callback);
+}
+
+void run(char *card, bool use_maf, callback_fcn callback)
+{
+
+    initAlsa(card);
 
     signal(SIGINT, microphone_inference_end);
 
@@ -597,7 +601,7 @@ int main(int argc, char **argv)
 
         // 3. classify on another thread so this one can continue reading
         //    (not sure if this is buffered already by the library? if so, can get rid of this and classify here)
-        classify_task(NULL);
+        classify_task(use_maf, callback);
 
         // pthread_t classify_thread_id;
         // int r = pthread_create(&classify_thread_id, NULL, classify_task, NULL);

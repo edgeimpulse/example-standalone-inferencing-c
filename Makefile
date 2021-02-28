@@ -82,9 +82,15 @@ build/libedgeimpulse.so: $(COBJECTS) $(CXXOBJECTS) $(CCOBJECTS)
 	$(MKDIR_BUILD)
 	$(CXX) $(COBJECTS) $(CXXOBJECTS) $(CCOBJECTS) -shared -o build/libedgeimpulse.so $(LDFLAGS)
 
+shared: $(APP_COBJECTS) build/libedgeimpulse.so
+	$(MKDIR_BUILD)
+	$(CXX) $(APP_COBJECTS) -shared -o build/libedge-impulse-standalone.so -L./build -ledgeimpulse  $(LDFLAGS)
+
+
 app: $(APP_COBJECTS) build/libedgeimpulse.so
 	$(MKDIR_BUILD)
 	$(CXX) $(APP_COBJECTS) build/libedgeimpulse.so -o build/$(NAME) $(LDFLAGS)
+
 
 clean:
 ifeq ($(OS),Windows_NT)
