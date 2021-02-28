@@ -32,24 +32,26 @@
 #include "ei_classifier_porting.h"
 #include "ei_classifier_types.h"
 #include <alsa/asoundlib.h>
+// #include "_cgo_export.h"
+#include "main.h"
 
 int microphone_audio_signal_get_data(size_t, size_t, float *);
 void microphone_inference_end();
 int run_classifier(signal_t *, ei_impulse_result_t *, bool);
 
-#define SLICE_LENGTH_MS     250         // 4 per second
-#define SLICE_LENGTH_VALUES  (EI_CLASSIFIER_RAW_SAMPLE_COUNT / (1000 / SLICE_LENGTH_MS))
+#define SLICE_LENGTH_MS 250 // 4 per second
+#define SLICE_LENGTH_VALUES (EI_CLASSIFIER_RAW_SAMPLE_COUNT / (1000 / SLICE_LENGTH_MS))
 
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
-static bool use_maf = false; // Set this (can be done from command line) to enable the moving average filter
+static bool use_maf = false;  // Set this (can be done from command line) to enable the moving average filter
 
 // Variables for keyword detection... We're looking for noise .. record now (2x) .. noise
-#define LAST_FRAMES_COUNT                   12          // Keep a buffer of N conclusions (here 3 seconds (12x250ms)
-#define NOISE_THRESHOLD                     0.8         // Threshold to classify a frame as 'noise'
-#define RECORD_NOW_LOW_THRESHOLD            0.4         // Threshold to classify a frame as 'Record now (low)'
-#define RECORD_NOW_HIGH_THRESHOLD           0.75        // Threshold to classify a frame as 'Record now (high)'
-#define RECORD_NOW_MIN_FRAMES_SUCCESSION    2           // Number of 'record now' frames that should be found in succession
-#define RECORD_NOW_MIN_HIGH_FRAMES          1           // Number of 'record now (high)' frames that should be in there
+#define LAST_FRAMES_COUNT 12               // Keep a buffer of N conclusions (here 3 seconds (12x250ms)
+#define NOISE_THRESHOLD 0.8                // Threshold to classify a frame as 'noise'
+#define RECORD_NOW_LOW_THRESHOLD 0.4       // Threshold to classify a frame as 'Record now (low)'
+#define RECORD_NOW_HIGH_THRESHOLD 0.75     // Threshold to classify a frame as 'Record now (high)'
+#define RECORD_NOW_MIN_FRAMES_SUCCESSION 2 // Number of 'record now' frames that should be found in succession
+#define RECORD_NOW_MIN_HIGH_FRAMES 1       // Number of 'record now (high)' frames that should be in there
 
 int16_t classifier_buffer[EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t)]; // full classifier buffer
 
@@ -59,6 +61,11 @@ unsigned int rate = EI_CLASSIFIER_FREQUENCY;
 snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
 char *card;
 
+// void ACFunction()
+// {
+//     printf("ACFunction()\n");
+//     keyword_detected_callback();
+// }
 /**
  * Initialize the alsa library
  */
@@ -170,7 +177,8 @@ static float run_moving_average_filter(ei_impulse_maf *maf, float classification
     maf->running_sum -= maf->maf_buffer[maf->buf_idx];
     maf->running_sum += classification;
     maf->maf_buffer[maf->buf_idx] = classification;
-    if (++maf->buf_idx >= ((1000 / SLICE_LENGTH_MS) >> 1)) {
+    if (++maf->buf_idx >= ((1000 / SLICE_LENGTH_MS) >> 1))
+    {
         maf->buf_idx = 0;
     }
     return maf->running_sum / (float)((1000 / SLICE_LENGTH_MS) >> 1);
@@ -180,11 +188,11 @@ static float run_moving_average_filter(ei_impulse_maf *maf, float classification
 static void clear_moving_average_filter(ei_impulse_maf *maf)
 {
     maf->running_sum = 0;
-    for (int i = 0; i < (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW >> 1); i++) {
+    for (int i = 0; i < (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW >> 1); i++)
+    {
         maf->maf_buffer[i] = 0.f;
     }
 }
-
 
 /**
  * Roll array elements along a given axis.
@@ -194,49 +202,54 @@ static void clear_moving_average_filter(ei_impulse_maf *maf)
  * @param shift The number of places by which elements are shifted.
  * @returns 0 if OK
  */
-static int roll_strings(const char **input_array, size_t input_array_size, int shift) {
-    if (shift < 0) {
+static int roll_strings(const char **input_array, size_t input_array_size, int shift)
+{
+    if (shift < 0)
+    {
         shift = input_array_size + shift;
     }
 
-    if (shift == 0) {
+    if (shift == 0)
+    {
         return 0;
     }
 
     // so we need to allocate a buffer of the size of shift...
-    char *shift_matrix = (char*)malloc(shift * sizeof(char*));
-    if (!shift_matrix) {
+    char *shift_matrix = (char *)malloc(shift * sizeof(char *));
+    if (!shift_matrix)
+    {
         return -1002;
     }
 
     // we copy from the end of the buffer into the shift buffer
-    memcpy(shift_matrix, input_array + input_array_size - shift, shift * sizeof(char*));
+    memcpy(shift_matrix, input_array + input_array_size - shift, shift * sizeof(char *));
 
     // now we do a memmove to shift the array
-    memmove(input_array + shift, input_array, (input_array_size - shift) * sizeof(char*));
+    memmove(input_array + shift, input_array, (input_array_size - shift) * sizeof(char *));
 
     // and copy the shift buffer back to the beginning of the array
-    memcpy(input_array, shift_matrix, shift * sizeof(char*));
+    memcpy(input_array, shift_matrix, shift * sizeof(char *));
 
     free(shift_matrix);
 
     return 0;
 }
 
-const char *last_frames[LAST_FRAMES_COUNT] = { 0 };
+const char *last_frames[LAST_FRAMES_COUNT] = {0};
 
 /**
  * Classify the current buffer
  */
 void *classify_task(void *vargp)
 {
-    char filename[128] = { 0 };
+    char filename[128] = {0};
 
     // write the WAV file for debug purposes...
     {
         static int classify_counter = 0;
-        struct stat st = { 0 };
-        if (stat("out", &st) == -1) {
+        struct stat st = {0};
+        if (stat("out", &st) == -1)
+        {
             mkdir("out", 0700);
         }
 
@@ -246,24 +259,57 @@ void *classify_task(void *vargp)
         uint32_t srBpsC8 = (wavFreq * 16 * 1) / 8;
 
         uint8_t wav_header[44] = {
-            0x52, 0x49, 0x46, 0x46, // RIFF
-            fileSize & 0xff, (fileSize >> 8) & 0xff, (fileSize >> 16) & 0xff, (fileSize >> 24) & 0xff,
-            0x57, 0x41, 0x56, 0x45, // WAVE
-            0x66, 0x6d, 0x74, 0x20, // fmt
-            0x10, 0x00, 0x00, 0x00, // length of format data
-            0x01, 0x00, // type of format (1=PCM)
-            0x01, 0x00, // number of channels
-            wavFreq & 0xff, (wavFreq >> 8) & 0xff, (wavFreq >> 16) & 0xff, (wavFreq >> 24) & 0xff,
-            srBpsC8 & 0xff, (srBpsC8 >> 8) & 0xff, (srBpsC8 >> 16) & 0xff, (srBpsC8 >> 24) & 0xff,
-            0x02, 0x00, 0x10, 0x00,
-            0x64, 0x61, 0x74, 0x61, // data
-            dataSize & 0xff, (dataSize >> 8) & 0xff, (dataSize >> 16) & 0xff, (dataSize >> 24) & 0xff,
+            0x52,
+            0x49,
+            0x46,
+            0x46, // RIFF
+            fileSize & 0xff,
+            (fileSize >> 8) & 0xff,
+            (fileSize >> 16) & 0xff,
+            (fileSize >> 24) & 0xff,
+            0x57,
+            0x41,
+            0x56,
+            0x45, // WAVE
+            0x66,
+            0x6d,
+            0x74,
+            0x20, // fmt
+            0x10,
+            0x00,
+            0x00,
+            0x00, // length of format data
+            0x01,
+            0x00, // type of format (1=PCM)
+            0x01,
+            0x00, // number of channels
+            wavFreq & 0xff,
+            (wavFreq >> 8) & 0xff,
+            (wavFreq >> 16) & 0xff,
+            (wavFreq >> 24) & 0xff,
+            srBpsC8 & 0xff,
+            (srBpsC8 >> 8) & 0xff,
+            (srBpsC8 >> 16) & 0xff,
+            (srBpsC8 >> 24) & 0xff,
+            0x02,
+            0x00,
+            0x10,
+            0x00,
+            0x64,
+            0x61,
+            0x74,
+            0x61, // data
+            dataSize & 0xff,
+            (dataSize >> 8) & 0xff,
+            (dataSize >> 16) & 0xff,
+            (dataSize >> 24) & 0xff,
         };
 
         snprintf(filename, 128, "out/data.%d.wav", ++classify_counter);
 
         FILE *f = fopen(filename, "w+");
-        if (!f) {
+        if (!f)
+        {
             printf("Failed to create file '%s'\n", filename);
             return NULL;
         }
@@ -276,17 +322,20 @@ void *classify_task(void *vargp)
     signal_t signal;
     signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
     signal.get_data = &microphone_audio_signal_get_data;
-    ei_impulse_result_t result = { 0 };
+    ei_impulse_result_t result = {0};
 
     EI_IMPULSE_ERROR r = run_classifier(&signal, &result, debug_nn);
-    if (r != EI_IMPULSE_OK) {
+    if (r != EI_IMPULSE_OK)
+    {
         printf("ERR: Failed to run classifier (%d)\n", r);
         return NULL;
     }
 
     // if moving average filter is enabled then smooth out the predictions
-    if (use_maf) {
-        for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+    if (use_maf)
+    {
+        for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+        {
             result.classification[ix].value =
                 run_moving_average_filter(&classifier_maf[ix], result.classification[ix].value);
         }
@@ -297,17 +346,22 @@ void *classify_task(void *vargp)
     for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
     {
         // for noise we'll use 0.8 as threshold
-        if (strcmp(result.classification[ix].label, "Noise") == 0) {
-            if (result.classification[ix].value >= NOISE_THRESHOLD) {
+        if (strcmp(result.classification[ix].label, "Noise") == 0)
+        {
+            if (result.classification[ix].value >= NOISE_THRESHOLD)
+            {
                 conclusion = result.classification[ix].label;
             }
         }
         // keep two separate classes for record now
-        else if (strcmp(result.classification[ix].label, "Record now") == 0) {
-            if (result.classification[ix].value >= RECORD_NOW_HIGH_THRESHOLD) {
+        else if (strcmp(result.classification[ix].label, "Record now") == 0)
+        {
+            if (result.classification[ix].value >= RECORD_NOW_HIGH_THRESHOLD)
+            {
                 conclusion = "Record now (high)";
             }
-            else if (result.classification[ix].value >= RECORD_NOW_LOW_THRESHOLD) {
+            else if (result.classification[ix].value >= RECORD_NOW_LOW_THRESHOLD)
+            {
                 conclusion = "Record now (low)";
             }
         }
@@ -322,7 +376,7 @@ void *classify_task(void *vargp)
     last_frames[LAST_FRAMES_COUNT - 1] = conclusion;
 
     // quick pad workaround for nicely printing
-    char conclusion_buffer[25] = { ' ' };
+    char conclusion_buffer[25] = {' '};
     snprintf(conclusion_buffer, 25, "%s                                     ", conclusion);
 
     printf("%s[", conclusion_buffer);
@@ -340,7 +394,6 @@ void *classify_task(void *vargp)
     }
     printf("] %s\n", filename);
 
-
     // last_frames contains the last X conclusions
     // we're looking for a pattern like this:
     // noise .. record now .. noise
@@ -348,41 +401,50 @@ void *classify_task(void *vargp)
 
     // uncomment this to see the last_frames buffer
     printf("[ ");
-    for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++) {
+    for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++)
+    {
         printf("%s", last_frames[ix]);
-        if (ix != LAST_FRAMES_COUNT - 1) {
+        if (ix != LAST_FRAMES_COUNT - 1)
+        {
             printf(", ");
         }
     }
     printf(" ]\n");
     printf("\n");
 
-    for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++) {
+    for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++)
+    {
         // not enough frames yet
-        if (last_frames[ix] == NULL) {
+        if (last_frames[ix] == NULL)
+        {
             return NULL;
         }
     }
 
-
     bool begins_with_noise = strcmp(last_frames[0], "Noise") == 0;
     bool ends_with_noise = strcmp(last_frames[LAST_FRAMES_COUNT - 1], "Noise") == 0;
-    if (!begins_with_noise || !ends_with_noise) {
+    if (!begins_with_noise || !ends_with_noise)
+    {
         // printf("Frame does not begin / end with noise, discarding...\n");
         return NULL;
     }
-    else {
+    else
+    {
         // now look at the number of 'Record now' frames in succession
         uint8_t record_now_count = 0;
         uint8_t record_now_succession = 0;
         uint8_t record_now_succession_ix_start = 0;
         uint8_t record_now_succession_ix_end = 0;
-        for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++) {
-            if (strcmp(last_frames[ix], "Record now (low)") == 0 || strcmp(last_frames[ix], "Record now (high)") == 0) {
+        for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++)
+        {
+            if (strcmp(last_frames[ix], "Record now (low)") == 0 || strcmp(last_frames[ix], "Record now (high)") == 0)
+            {
                 record_now_count++;
             }
-            else {
-                if (record_now_count > record_now_succession) {
+            else
+            {
+                if (record_now_count > record_now_succession)
+                {
                     record_now_succession = record_now_count;
                     record_now_succession_ix_end = ix - 1;
                     record_now_succession_ix_start = ix - record_now_count;
@@ -391,19 +453,23 @@ void *classify_task(void *vargp)
             }
         }
 
-        if (record_now_succession < RECORD_NOW_MIN_FRAMES_SUCCESSION) {
+        if (record_now_succession < RECORD_NOW_MIN_FRAMES_SUCCESSION)
+        {
             // printf("Frame does not have %d 'Record now' frames in succession, discarding...\n", RECORD_NOW_MIN_FRAMES_SUCCESSION);
             return NULL;
         }
 
         uint8_t record_now_high_count = 0;
-        for (size_t ix = record_now_succession_ix_start; ix <= record_now_succession_ix_end; ix++) {
-            if (strcmp(last_frames[ix], "Record now (high)") == 0) {
+        for (size_t ix = record_now_succession_ix_start; ix <= record_now_succession_ix_end; ix++)
+        {
+            if (strcmp(last_frames[ix], "Record now (high)") == 0)
+            {
                 record_now_high_count++;
             }
         }
 
-        if (record_now_high_count < RECORD_NOW_MIN_HIGH_FRAMES) {
+        if (record_now_high_count < RECORD_NOW_MIN_HIGH_FRAMES)
+        {
             // printf("Frame does not have %d 'Record now (high)' frames, discarding...\n", RECORD_NOW_MIN_HIGH_FRAMES);
             return NULL;
         }
@@ -422,18 +488,22 @@ void *classify_task(void *vargp)
  * @param shift The number of places by which elements are shifted.
  * @returns 0 if OK
  */
-static int roll(int16_t *input_array, size_t input_array_size, int shift) {
-    if (shift < 0) {
+static int roll(int16_t *input_array, size_t input_array_size, int shift)
+{
+    if (shift < 0)
+    {
         shift = input_array_size + shift;
     }
 
-    if (shift == 0) {
+    if (shift == 0)
+    {
         return 0;
     }
 
     // so we need to allocate a buffer of the size of shift...
-    int16_t *shift_matrix = (int16_t*)malloc(shift * sizeof(int16_t));
-    if (!shift_matrix) {
+    int16_t *shift_matrix = (int16_t *)malloc(shift * sizeof(int16_t));
+    if (!shift_matrix)
+    {
         return -1002;
     }
 
@@ -454,8 +524,10 @@ static int roll(int16_t *input_array, size_t input_array_size, int shift) {
 /**
  * Int16 => Float conversion for the classifier
  */
-static int int16_to_float(int16_t *input, float *output, size_t length) {
-    for (size_t ix = 0; ix < length; ix++) {
+static int int16_to_float(int16_t *input, float *output, size_t length)
+{
+    for (size_t ix = 0; ix < length; ix++)
+    {
         output[ix] = (float)(input[ix]) / 32768;
     }
     return 0;
@@ -466,7 +538,8 @@ static int int16_to_float(int16_t *input, float *output, size_t length) {
  */
 int main(int argc, char **argv)
 {
-    if (argc < 2) {
+    if (argc < 2)
+    {
         printf("Requires one parameter (ID of the sound card) in the form of hw:1,0 (where 1=card number, 0=device).\n");
         printf("You can find these via `aplay -l`. E.g. for:\n");
         printf("    card 1: Microphone [Yeti Stereo Microphone], device 0: USB Audio [USB Audio]\n");
@@ -476,7 +549,8 @@ int main(int argc, char **argv)
 
     card = argv[1];
 
-    if (argc >= 3 && strcmp(argv[2], "--moving-average-filter") == 0) {
+    if (argc >= 3 && strcmp(argv[2], "--moving-average-filter") == 0)
+    {
         printf("Enabling moving average filter\n");
         use_maf = true;
     }
@@ -486,7 +560,8 @@ int main(int argc, char **argv)
     signal(SIGINT, microphone_inference_end);
 
     // clear out the moving average filter
-    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+    {
         clear_moving_average_filter(&classifier_maf[ix]);
     }
 
@@ -494,9 +569,11 @@ int main(int argc, char **argv)
     int16_t slice_buffer[SLICE_LENGTH_VALUES * sizeof(int16_t)];
     uint32_t classify_count = 0;
 
-    while (1) {
+    while (1)
+    {
         int x = snd_pcm_readi(capture_handle, slice_buffer, SLICE_LENGTH_VALUES);
-        if (x != SLICE_LENGTH_VALUES) {
+        if (x != SLICE_LENGTH_VALUES)
+        {
             printf("Failed to read audio data (%d)\n", x);
             return 1;
         }
@@ -513,7 +590,8 @@ int main(int argc, char **argv)
         memcpy(classifier_buffer + classifier_buffer_offset, slice_buffer, SLICE_LENGTH_VALUES * sizeof(int16_t));
 
         // ignore the first 4 slices we classify, we don't have a complete frame yet
-        if (++classify_count < 4) {
+        if (++classify_count < 4)
+        {
             continue;
         }
 
@@ -532,7 +610,8 @@ int main(int argc, char **argv)
 /**
  * Get data from the classifier buffer
  */
-int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
+int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr)
+{
     return int16_to_float(classifier_buffer + offset, out_ptr, length);
 }
 
