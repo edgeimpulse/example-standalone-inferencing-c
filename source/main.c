@@ -1,9 +1,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
-#include "numpy_types.h"
-#include "ei_classifier_porting.h"
-#include "ei_classifier_types.h"
+#include "edge-impulse-sdk/dsp/numpy_types.h"
+#include "edge-impulse-sdk/porting/ei_classifier_porting.h"
+#include "edge-impulse-sdk/classifier/ei_classifier_types.h"
 
 static float features[1 * 1024 * 1024];
 static size_t feature_ix = 0;
