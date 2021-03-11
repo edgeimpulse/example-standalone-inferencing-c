@@ -37,18 +37,19 @@ int microphone_audio_signal_get_data(size_t, size_t, float *);
 void microphone_inference_end();
 int run_classifier(signal_t *, ei_impulse_result_t *, bool);
 
-#define SLICE_LENGTH_MS     250         // 4 per second
+#define SLICE_LENGTH_MS     125         // 8 per second
 #define SLICE_LENGTH_VALUES  (EI_CLASSIFIER_RAW_SAMPLE_COUNT / (1000 / SLICE_LENGTH_MS))
 
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
 static bool use_maf = false; // Set this (can be done from command line) to enable the moving average filter
+static bool use_debug = false; // Set this (can be done from command line) to enable debug messages about the current state
 
 // Variables for keyword detection... We're looking for noise .. record now (2x) .. noise
-#define LAST_FRAMES_COUNT                   12          // Keep a buffer of N conclusions (here 3 seconds (12x250ms)
+#define LAST_FRAMES_COUNT                   20          // Keep a buffer of N conclusions (here 2.5 seconds (25x100ms.)
 #define NOISE_THRESHOLD                     0.8         // Threshold to classify a frame as 'noise'
 #define RECORD_NOW_LOW_THRESHOLD            0.4         // Threshold to classify a frame as 'Record now (low)'
 #define RECORD_NOW_HIGH_THRESHOLD           0.75        // Threshold to classify a frame as 'Record now (high)'
-#define RECORD_NOW_MIN_FRAMES_SUCCESSION    2           // Number of 'record now' frames that should be found in succession
+#define RECORD_NOW_MIN_FRAMES_SUCCESSION    3           // Number of 'record now' frames that should be found in succession
 #define RECORD_NOW_MIN_HIGH_FRAMES          1           // Number of 'record now (high)' frames that should be in there
 
 int16_t classifier_buffer[EI_CLASSIFIER_RAW_SAMPLE_COUNT * sizeof(int16_t)]; // full classifier buffer
@@ -170,10 +171,10 @@ static float run_moving_average_filter(ei_impulse_maf *maf, float classification
     maf->running_sum -= maf->maf_buffer[maf->buf_idx];
     maf->running_sum += classification;
     maf->maf_buffer[maf->buf_idx] = classification;
-    if (++maf->buf_idx >= ((1000 / SLICE_LENGTH_MS) >> 1)) {
+    if (++maf->buf_idx >= (EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW >> 1)) {
         maf->buf_idx = 0;
     }
-    return maf->running_sum / (float)((1000 / SLICE_LENGTH_MS) >> 1);
+    return maf->running_sum / (float)(EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW >> 1);
 }
 
 // at the beginning:
@@ -340,22 +341,23 @@ void *classify_task(void *vargp)
     }
     printf("] %s\n", filename);
 
-
     // last_frames contains the last X conclusions
     // we're looking for a pattern like this:
     // noise .. record now .. noise
     // where there are at least 2 record now frames in succession, of which one should be high
 
     // uncomment this to see the last_frames buffer
-    printf("[ ");
-    for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++) {
-        printf("%s", last_frames[ix]);
-        if (ix != LAST_FRAMES_COUNT - 1) {
-            printf(", ");
+    if (use_debug) {
+        printf("[ ");
+        for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++) {
+            if (last_frames[ix] == NULL) continue;
+            printf("%c", last_frames[ix][0]);
+            if (ix != LAST_FRAMES_COUNT - 1) {
+                printf(", ");
+            }
         }
+        printf(" ]\n");
     }
-    printf(" ]\n");
-    printf("\n");
 
     for (size_t ix = 0; ix < LAST_FRAMES_COUNT; ix++) {
         // not enough frames yet
@@ -408,7 +410,8 @@ void *classify_task(void *vargp)
             return NULL;
         }
 
-        printf("\n\nHeard keyword: \x1B[33mRECORD NOW\033[0m\n\n\n");
+        printf("\nHeard keyword: \x1B[33mRECORD NOW\033[0m\n\n");
+        memset(last_frames, 0, LAST_FRAMES_COUNT * sizeof(const char*));
     }
 
     return NULL;
@@ -476,9 +479,16 @@ int main(int argc, char **argv)
 
     card = argv[1];
 
-    if (argc >= 3 && strcmp(argv[2], "--moving-average-filter") == 0) {
-        printf("Enabling moving average filter\n");
-        use_maf = true;
+    for (size_t ix = 2; ix < argc; ix++) {
+        if (strcmp(argv[ix], "--moving-average-filter") == 0) {
+            printf("Enabling moving average filter\n");
+            use_maf = true;
+        }
+
+        if (strcmp(argv[ix], "--debug") == 0) {
+            printf("Enabling debug mode\n");
+            use_debug = true;
+        }
     }
 
     initAlsa();
