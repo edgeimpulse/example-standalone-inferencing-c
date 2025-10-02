@@ -73,22 +73,47 @@ int main(int argc, char **argv) {
 
     printf("Begin output\n");
 
-    // print the predictions
-    printf("[");
-    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-        printf("%.5f", result.classification[ix].value);
-#if EI_CLASSIFIER_HAS_ANOMALY == 1
-        printf(", ");
-#else
-        if (ix != EI_CLASSIFIER_LABEL_COUNT - 1) {
-            printf(", ");
-        }
-#endif
-    }
-#if EI_CLASSIFIER_HAS_ANOMALY == 1
-    printf("%.3f", result.anomaly);
-#endif
-    printf("]\n");
+    #if EI_CLASSIFIER_OBJECT_DETECTION == 1
+        for (size_t ix = 0; ix < result.bounding_boxes_count; ix++) {
+            ei_impulse_result_bounding_box_t bb = result.bounding_boxes[ix];
+            if (bb.value == 0) {
+                continue;
+            }
 
+            printf("%s (%f) [ x: %u, y: %u, width: %u, height: %u ]\n", bb.label, bb.value, bb.x, bb.y, bb.width, bb.height);
+        }
+    #elif ((EI_CLASSIFIER_HAS_ANOMALY == EI_ANOMALY_TYPE_VISUAL_GMM) || (EI_CLASSIFIER_HAS_ANOMALY == EI_ANOMALY_TYPE_VISUAL_PATCHCORE))
+        for (uint32_t i = 0; i < result.visual_ad_count; i++) {
+            ei_impulse_result_bounding_box_t bb = result.visual_ad_grid_cells[i];
+            if (bb.value == 0) {
+                continue;
+            }
+            ei_printf("%s (%f) [ x: %u, y: %u, width: %u, height: %u ]\n",
+                    bb.label,
+                    bb.value,
+                    bb.x,
+                    bb.y,
+                    bb.width,
+                    bb.height);
+        }
+        // ei_printf("%.3f, %.3f\r\n", result.visual_ad_result.mean_value, result.visual_ad_result.max_value);
+    #else
+        // print the predictions
+        printf("[");
+        for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+            printf("%.5f", result.classification[ix].value);
+    #if EI_CLASSIFIER_HAS_ANOMALY > 0
+            printf(", ");
+    #else
+            if (ix != EI_CLASSIFIER_LABEL_COUNT - 1) {
+                printf(", ");
+            }
+    #endif
+        }
+    #if EI_CLASSIFIER_HAS_ANOMALY > 0
+        printf("%.3f", result.anomaly);
+    #endif
+        printf("]\n");
+    #endif // EI_CLASSIFIER_OBJECT_DETECTION == 1
     printf("End output\n");
 }
